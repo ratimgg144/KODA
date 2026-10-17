@@ -44,11 +44,12 @@ public final class MainActivity extends Activity {
     private boolean busy = false;
     private boolean verified = false;
     private boolean showAdvanced = false;
+    private boolean wiredMode = true;
     private EnetProtocol.Vehicle vehicle;
     private EnetClient client;
 
     private TextView statusTitle, statusBody, vinValue, protocolValue, networkValue, logView;
-    private TextView vehicleSubtitle, vehicleRowSubtitle;
+    private TextView vehicleSubtitle, vehicleRowSubtitle, adapterModeValue;
     private LinearLayout vehiclePanel, advancedPanel, advancedRow;
     private View statusDot;
     private Button connectButton;
@@ -162,6 +163,19 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(-1, -2);
         ap.topMargin = dp(12);
         root.addView(advancedPanel, ap);
+        adapterModeValue = label("კავშირის ტიპი: USB-C ENET კაბელი    ›", 14, WHITE, true);
+        adapterModeValue.setPadding(0, dp(4), 0, dp(15));
+        adapterModeValue.setOnClickListener(v -> {
+            String[] choices = {"USB-C ENET კაბელი", "ENET Wi-Fi ადაპტერი"};
+            new AlertDialog.Builder(this)
+                .setTitle("კავშირის ტიპი")
+                .setSingleChoiceItems(choices, wiredMode ? 0 : 1, (dialog, selected) -> {
+                    wiredMode = (selected == 0);
+                    adapterModeValue.setText("კავშირის ტიპი: " + choices[selected] + "    ›");
+                    dialog.dismiss();
+                }).setNegativeButton("გაუქმება", null).show();
+        });
+        advancedPanel.addView(adapterModeValue);
         advancedPanel.addView(label("Gateway IP  ·  არასავალდებულო", 12, SOFT, false));
         gap(advancedPanel, 10);
         ipInput = new EditText(this);
@@ -175,7 +189,7 @@ public final class MainActivity extends Activity {
         ipInput.setBackground(round(BG, 9, LINE));
         advancedPanel.addView(ipInput, new LinearLayout.LayoutParams(-1, dp(48)));
         gap(advancedPanel, 12);
-        TextView adapterHint = label("საჭიროა ENET Ethernet ან ENET Wi-Fi ადაპტერი. ELM327 არ მუშაობს.", 12, MUTED, false);
+        TextView adapterHint = label("კაბელის რეჟიმში KODA Wi-Fi-ს არ გამოიყენებს. USB Ethernet ინტერფეისის სტატუსი გამოჩნდება ჟურნალში. ELM327 არ მუშაობს.", 12, MUTED, false);
         adapterHint.setLineSpacing(dp(3), 1f);
         advancedPanel.addView(adapterHint);
         gap(advancedPanel, 24);
@@ -198,7 +212,7 @@ public final class MainActivity extends Activity {
         advancedPanel.setVisibility(View.GONE);
 
         gap(root, 35);
-        TextView footer = label("KODA · 0.2     •     მხოლოდ წაკითხვა", 11, MUTED, false);
+        TextView footer = label("KODA · 0.3     •     მხოლოდ წაკითხვა", 11, MUTED, false);
         footer.setGravity(Gravity.CENTER_HORIZONTAL);
         root.addView(footer);
     }
@@ -217,10 +231,12 @@ public final class MainActivity extends Activity {
         synchronized (debug) { debug.setLength(0); }
         log("START · DoIP / HSFZ");
         final String ip = ipInput.getText().toString().trim();
+        final boolean selectedWiredMode = wiredMode;
         executor.execute(() -> {
-            List<AndroidEnetNetwork.Route> routes = AndroidEnetNetwork.routes(this);
+            log(AndroidEnetNetwork.diagnosticReport(this, selectedWiredMode));
+            List<AndroidEnetNetwork.Route> routes = AndroidEnetNetwork.routes(this, selectedWiredMode);
             if (routes.isEmpty()) {
-                failed(AndroidEnetNetwork.missingNetworkHint(this));
+                failed(AndroidEnetNetwork.missingNetworkHint(this, selectedWiredMode));
                 return;
             }
             String failure = "მანქანა ვერ მოიძებნა";

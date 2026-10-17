@@ -33,6 +33,9 @@ public final class EnetClient {
         log.line("ქსელი: " + link.description());
         List<InetAddress> destinations = link.discoveryDestinations(manualIp);
         if (destinations.isEmpty()) throw new IOException("საძიებო IP მისამართი მიუწვდომელია");
+        for (InetAddress destination : destinations) {
+            log.line("ძიება: " + destination.getHostAddress() + " (UDP 13400/6811)");
+        }
         List<Vehicle> found = new ArrayList<>();
         try (DatagramSocket doip = link.openUdp(); DatagramSocket hsfz = link.openUdp()) {
             doip.setBroadcast(true);
