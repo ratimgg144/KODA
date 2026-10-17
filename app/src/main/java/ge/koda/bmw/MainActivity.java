@@ -5,6 +5,7 @@ import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
@@ -22,9 +23,11 @@ import android.widget.Toast;
 
 import ge.koda.bmw.net.AndroidEnetNetwork;
 import ge.koda.bmw.net.EnetClient;
+import ge.koda.bmw.net.EcuScanner;
 import ge.koda.bmw.protocol.EnetProtocol;
 
 import java.util.List;
+import java.util.ArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -47,12 +50,13 @@ public final class MainActivity extends Activity {
     private boolean wiredMode = true;
     private EnetProtocol.Vehicle vehicle;
     private EnetClient client;
+    private final List<EcuScanner.EcuInfo> ecuModules = new ArrayList<>();
 
     private TextView statusTitle, statusBody, vinValue, protocolValue, networkValue, logView;
-    private TextView vehicleSubtitle, vehicleRowSubtitle, adapterModeValue;
-    private LinearLayout vehiclePanel, advancedPanel, advancedRow;
+    private TextView vehicleSubtitle, vehicleRowSubtitle, adapterModeValue, carTitle, ecuSummary;
+    private LinearLayout vehiclePanel, advancedPanel, advancedRow, ecuPanel, ecuResults;
     private View statusDot;
-    private Button connectButton;
+    private Button connectButton, scanButton, dtcButton;
     private EditText ipInput;
 
     @Override public void onCreate(Bundle savedState) {
@@ -85,14 +89,14 @@ public final class MainActivity extends Activity {
         root.addView(header);
 
         gap(root, 48);
-        TextView overline = label("სატესტო ავტომობილი", 12, MUTED, false);
+        TextView overline = label("BMW · ENET", 12, MUTED, false);
         root.addView(overline);
         gap(root, 8);
-        TextView carTitle = label("BMW 3 Series", 29, WHITE, true);
+        carTitle = label("BMW", 29, WHITE, true);
         carTitle.setLetterSpacing(-0.035f);
         root.addView(carTitle);
         gap(root, 5);
-        vehicleSubtitle = label("G20  ·  2021", 14, SOFT, false);
+        vehicleSubtitle = label("მანქანა არ არის დაკავშირებული", 14, SOFT, false);
         root.addView(vehicleSubtitle);
 
         gap(root, 34);
@@ -124,6 +128,11 @@ public final class MainActivity extends Activity {
         LinearLayout actions = vertical();
         actions.setBackground(round(PANEL, 16, 0));
         actions.setPadding(dp(17), dp(5), dp(17), dp(5));
+        actions.addView(actionRow("ECU სკანირება", "მოდულების და შეცდომების წაკითხვა", "›", () -> {
+            if (!verified) { showDialog("ჯერ დაუკავშირდით BMW-ს", "კავშირის დამადასტურებელი VIN უნდა წავიკითხოთ, შემდეგ გახსენით ECU სკანირება."); return; }
+            ecuPanel.setVisibility(ecuPanel.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
+        }));
+        separator(actions);
         actions.addView(actionRow("კოდირება", "პარამეტრების შეცვლა", "მალე", () -> showDialog(
             "კოდირება ჯერ არ არის ხელმისაწვდომი",
             "ეს ვერსია მხოლოდ მანქანასთან კავშირს ამოწმებს. კოდირება დაემატება უსაფრთხო სარეზერვო ასლებისა და თავსებადობის შემოწმების შემდეგ.")));
@@ -143,6 +152,36 @@ public final class MainActivity extends Activity {
         });
         actions.addView(advancedRow);
         root.addView(actions);
+
+        ecuPanel = vertical();
+        ecuPanel.setPadding(dp(17), dp(18), dp(17), dp(18));
+        ecuPanel.setBackground(round(PANEL, 16, 0));
+        LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(-1, -2);
+        ep.topMargin = dp(12);
+        root.addView(ecuPanel, ep);
+        ecuPanel.addView(label("ECU მოდულები", 17, WHITE, true));
+        gap(ecuPanel, 9);
+        ecuSummary = label("დადასტურებული კავშირის შემდეგ დააჭირეთ სკანირებას. KODA წაიკითხავს იმ ECU-ებს, რომლებიც პასუხობენ. ეს არ არის სრული BMW ECU კატალოგი.", 12, MUTED, false);
+        ecuSummary.setLineSpacing(dp(3), 1f);
+        ecuPanel.addView(ecuSummary);
+        gap(ecuPanel, 15);
+        scanButton = actionButton("ECU-ების ძიება");
+        scanButton.setOnClickListener(v -> scanEcus());
+        ecuPanel.addView(scanButton, new LinearLayout.LayoutParams(-1, dp(49)));
+        gap(ecuPanel, 10);
+        dtcButton = actionButton("შეცდომების წაკითხვა");
+        dtcButton.setEnabled(false);
+        dtcButton.setOnClickListener(v -> scanFaults());
+        ecuPanel.addView(dtcButton, new LinearLayout.LayoutParams(-1, dp(49)));
+        gap(ecuPanel, 12);
+        TextView share = label("ანგარიშის გაზიარება  ↗", 13, SOFT, true);
+        share.setPadding(0, dp(8), 0, dp(8));
+        share.setOnClickListener(v -> shareReport());
+        ecuPanel.addView(share);
+        gap(ecuPanel, 12);
+        ecuResults = vertical();
+        ecuPanel.addView(ecuResults);
+        ecuPanel.setVisibility(View.GONE);
 
         vehiclePanel = vertical();
         vehiclePanel.setPadding(dp(18), dp(17), dp(18), dp(17));
@@ -212,7 +251,7 @@ public final class MainActivity extends Activity {
         advancedPanel.setVisibility(View.GONE);
 
         gap(root, 35);
-        TextView footer = label("KODA · 0.3     •     მხოლოდ წაკითხვა", 11, MUTED, false);
+        TextView footer = label("KODA · 0.4     •     მხოლოდ წაკითხვა", 11, MUTED, false);
         footer.setGravity(Gravity.CENTER_HORIZONTAL);
         root.addView(footer);
     }
@@ -225,6 +264,11 @@ public final class MainActivity extends Activity {
         vehicle = null;
         client = null;
         vehiclePanel.setVisibility(View.GONE);
+        ecuPanel.setVisibility(View.GONE);
+        synchronized (ecuModules) { ecuModules.clear(); }
+        refreshEcuList();
+        carTitle.setText("BMW");
+        vehicleSubtitle.setText("მანქანა არ არის დაკავშირებული");
         connectButton.setEnabled(false);
         connectButton.setText("იძებნება…");
         setStatus("ვუკავშირდებით BMW-ს…", "მოწმდება ENET კავშირი.", false);
@@ -248,6 +292,8 @@ public final class MainActivity extends Activity {
                     vehicle = found;
                     runOnUiThread(() -> {
                         vinValue.setText(found.vin);
+                        carTitle.setText("BMW · ENET");
+                        vehicleSubtitle.setText("VIN · " + found.vin.substring(Math.max(0, found.vin.length()-6)));
                         protocolValue.setText(found.protocol);
                         networkValue.setText(found.address);
                         setStatus("BMW ნაპოვნია", "შემდეგი ნაბიჯი: VIN-ის შემოწმება.", true);
@@ -280,7 +326,8 @@ public final class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     verified = checked.equals(selected.vin);
                     if (verified) {
-                        setStatus("კავშირი დადასტურებულია", "მანქანის VIN გადამოწმდა. პარამეტრები არ შეცვლილა.", true);
+                        setStatus("კავშირი დადასტურებულია", "მანქანის VIN გადამოწმდა. გახსენით ECU სკანირება.", true);
+                        ecuSummary.setText("შეამოწმეთ მანქანის ECU-ები რეალური პასუხებით. სკანირება მხოლოდ დიაგნოსტიკურ კითხვებს აგზავნის.");
                     } else {
                         setStatus("VIN არ ემთხვევა", "Gateway-ისა და ECU-ის VIN განსხვავებულია.", false);
                     }
@@ -300,6 +347,117 @@ public final class MainActivity extends Activity {
                 });
             }
         });
+    }
+
+    private void scanEcus() {
+        if (busy || !verified || vehicle == null || client == null) return;
+        busy = true;
+        scanButton.setEnabled(false);
+        scanButton.setText("მიმდინარეობს სკანირება…");
+        dtcButton.setEnabled(false);
+        ecuSummary.setText("ECU-ების ძებნა იწყება. ავტომობილი დატოვეთ გაჩერებული და კაბელი არ გამოაძროთ.");
+        EnetProtocol.Vehicle selected = vehicle;
+        EnetClient current = client;
+        executor.execute(() -> {
+            try {
+                EcuScanner scanner = current.scanner();
+                List<EcuScanner.EcuInfo> found = scanner.scan(selected, (done,total,message) ->
+                    runOnUiThread(() -> {
+                        ecuSummary.setText("მოწმდება " + done + "/" + total + " · " + message + "\nეს არის შეზღუდული სიის სკანირება, არა ყველა შესაძლო ECU.");
+                    }));
+                runOnUiThread(() -> {
+                    synchronized (ecuModules) { ecuModules.clear(); ecuModules.addAll(found); }
+                    refreshEcuList();
+                    ecuSummary.setText("ნაპოვნია " + found.size() + " ECU პასუხი. ზოგი მოდული შეიძლება არ პასუხობდეს სტანდარტულ მოთხოვნას.");
+                    scanButton.setText("ECU-ების ხელახალი ძიება");
+                    scanButton.setEnabled(true);
+                    dtcButton.setEnabled(!found.isEmpty());
+                    busy = false;
+                });
+            } catch (Exception e) {
+                String error = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+                log("SCAN ERROR · " + error);
+                runOnUiThread(() -> {
+                    ecuSummary.setText("სკანირება შეწყდა: " + error);
+                    scanButton.setText("სცადეთ ხელახლა");
+                    scanButton.setEnabled(true);
+                    dtcButton.setEnabled(!ecuModules.isEmpty());
+                    busy = false;
+                });
+            }
+        });
+    }
+
+    private void scanFaults() {
+        if (busy || !verified || ecuModules.isEmpty() || vehicle == null) return;
+        busy = true;
+        dtcButton.setEnabled(false);
+        scanButton.setEnabled(false);
+        ecuSummary.setText("მოდულების შეცდომების წაკითხვა… არცერთი კოდი არ გასუფთავდება.");
+        EnetProtocol.Vehicle selected = vehicle;
+        EnetClient current = client;
+        List<EcuScanner.EcuInfo> snapshot = new ArrayList<>(ecuModules);
+        executor.execute(() -> {
+            try {
+                EcuScanner scanner = current.scanner();
+                scanner.readFaultCodes(selected, snapshot, (done,total,message) ->
+                    runOnUiThread(() -> ecuSummary.setText("DTC " + done + "/" + total + " · " + message)));
+                runOnUiThread(() -> {
+                    refreshEcuList();
+                    ecuSummary.setText("შეცდომების წაკითხვა დასრულდა. ეს არის ნედლი კოდები, არა მათი BMW აღწერები. მხარდაჭერა ECU-ზეა დამოკიდებული.");
+                    dtcButton.setEnabled(true);
+                    scanButton.setEnabled(true);
+                    busy = false;
+                });
+            } catch (Exception e) {
+                String error = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+                log("DTC ERROR · " + error);
+                runOnUiThread(() -> {
+                    ecuSummary.setText("შეცდომის წაკითხვა შეწყდა: " + error);
+                    dtcButton.setEnabled(true);
+                    scanButton.setEnabled(true);
+                    refreshEcuList();
+                    busy = false;
+                });
+            }
+        });
+    }
+
+    private void refreshEcuList() {
+        if (ecuResults == null) return;
+        ecuResults.removeAllViews();
+        if (ecuModules.isEmpty()) {
+            ecuResults.addView(label("ჯერ ECU არ არის ნაპოვნი.", 12, MUTED, false));
+            return;
+        }
+        for (EcuScanner.EcuInfo ecu : ecuModules) {
+            separator(ecuResults);
+            ecuResults.addView(actionRow(ecu.addressText() + " · " + ecu.label,
+                ecu.identified ? (ecu.partNumber.isEmpty() ? "იდენტიფიკაციაზე პასუხობს · " : "Part: " + ecu.partNumber + " · ") + ecu.faultStatus
+                               : "ECU-მ უპასუხა, მაგრამ VIN DID არ არის მხარდაჭერილი · " + ecu.faultStatus,
+                "›", () -> {
+                    StringBuilder body = new StringBuilder("მისამართი: ").append(ecu.addressText()).append("\n")
+                        .append("იდენტიფიკაცია: ").append(ecu.identified ? "დადასტურებული პასუხი" : "უარყოფითი UDS პასუხი").append("\n");
+                    if (!ecu.vin.isEmpty()) body.append("VIN: ").append(ecu.vin).append("\n");
+                    if (!ecu.partNumber.isEmpty()) body.append("Part / ID: ").append(ecu.partNumber).append("\n");
+                    body.append("შეცდომების სტატუსი: ").append(ecu.faultStatus);
+                    for (String fault : ecu.faults) body.append("\n").append(fault);
+                    showDialog(ecu.label, body.toString());
+                }));
+        }
+    }
+
+    private void shareReport() {
+        if (vehicle == null || ecuModules.isEmpty()) {
+            showDialog("ანგარიში", "ჯერ ECU სკანირება გაუშვით."); return;
+        }
+        // VIN masked by default, including any ECU VINs. Do not send full VIN by accident.
+        String content = EcuScanner.report(vehicle, new ArrayList<>(ecuModules), false);
+        Intent share = new Intent(Intent.ACTION_SEND);
+        share.setType("text/plain");
+        share.putExtra(Intent.EXTRA_SUBJECT, "KODA ECU Report");
+        share.putExtra(Intent.EXTRA_TEXT, content);
+        startActivity(Intent.createChooser(share, "ანგარიშის გაზიარება"));
     }
 
     private void failed(String message) {

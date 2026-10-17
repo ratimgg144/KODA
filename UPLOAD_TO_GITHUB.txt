@@ -1,0 +1,13 @@
+KODA v0.4 — How to get your new Android APK
+
+1. Unzip KODA-v0.4-ECU-Scanner.zip on your PC.
+2. Open github.com/ratimgg144/KODA (Code tab).
+3. Add file -> Upload files.
+4. Drag the CONTENTS of the extracted folder, preserving subfolders. Commit changes.
+5. Actions -> Build KODA Android APK -> newest run -> wait for green check.
+6. Artifacts -> KODA-v0.4-ECU-Scanner-APK -> download ZIP.
+7. Extract app-debug.apk and install on Android.
+8. Connect -> Verify VIN -> ECU სკანირება -> ECU-ების ძიება.
+
+NOTE: This archive is Android SOURCE, not a compiled APK. The GitHub workflow builds the actual APK.
+27 simulator tests passed; read-only ECU scanning is not yet tested on a physical BMW.

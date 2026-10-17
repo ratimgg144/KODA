@@ -29,6 +29,9 @@ public final class EnetClient {
     private static final int TESTER = 0x0E80;
     public EnetClient(Link link, Log log) { this.link = link; this.log = log; }
 
+    /** Reuses the verified Android network route for read-only ECU scanning. */
+    public EcuScanner scanner() { return new EcuScanner(link, log); }
+
     public Vehicle discover(String manualIp) throws IOException {
         log.line("ქსელი: " + link.description());
         List<InetAddress> destinations = link.discoveryDestinations(manualIp);
